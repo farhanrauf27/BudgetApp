@@ -24,10 +24,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     date: new Date().toISOString().split('T')[0],
   });
 
-  const categories = {
-    income: ['Salary', 'Freelance', 'Investment', 'Business', 'Gift', 'Other'],
-    expense: ['Food', 'Transport', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Education', 'Other'],
-  };
+  // const categories = {
+  //   income: ['Salary', 'Freelance', 'Investment', 'Business', 'Gift', 'Other'],
+  //   expense: ['Food', 'Transport', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Education', 'Other'],
+  // };
 
   const today = new Date().toISOString().split('T')[0];
 

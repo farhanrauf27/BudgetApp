@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useCallback } from 'react';
 import { Delete, Edit, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import { transactionAPI } from '../services/api';
 import { Transaction } from '../types';
@@ -29,11 +29,7 @@ const TransactionList: React.FC = () => {
   
 }, []);
 
-  useEffect(() => {
-    if (selectedMonth) {
-      loadTransactions();
-    }
-  }, [selectedMonth]);
+  
 
   const loadAvailableMonths = async () => {
     try {
@@ -47,17 +43,7 @@ const TransactionList: React.FC = () => {
     }
   };
 
-  const loadTransactions = async () => {
-    try {
-      const response = await transactionAPI.getTransactions(selectedMonth);
-      setTransactions(response.data);
-      calculateSummary(response.data);
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-    }
-  };
-
-  const calculateSummary = async (transactions: Transaction[]) => {
+  const calculateSummary = useCallback(async (transactions: Transaction[]) => {
   const incomeTransactions = transactions.filter(t => t.type === 'income');
   const expenseTransactions = transactions.filter(t => t.type === 'expense');
   
@@ -88,7 +74,23 @@ const TransactionList: React.FC = () => {
     incomeCount: incomeTransactions.length,
     expenseCount: expenseTransactions.length
   });
-};
+}, [selectedMonth]);
+
+  const loadTransactions = useCallback(async () => {
+    try {
+      const response = await transactionAPI.getTransactions(selectedMonth);
+      setTransactions(response.data);
+     await calculateSummary(response.data);
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+    }
+  }, [selectedMonth,calculateSummary]);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
+
+  
 
   const handleEdit = (transaction: Transaction) => {
     setEditingTransaction(transaction);

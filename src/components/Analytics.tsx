@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useCallback} from 'react';
 import {
   PieChart,
   Pie,
@@ -13,8 +13,6 @@ import {
   Legend,
   ResponsiveContainer,
   Cell,
-  AreaChart,
-  Area,
 } from 'recharts';
 import { transactionAPI } from '../services/api';
 import { Transaction, MonthlySummary } from '../types';
@@ -33,18 +31,8 @@ const Analytics: React.FC = () => {
     loadAvailableMonths();
   }, []);
 
-  useEffect(() => {
-    if (selectedMonth) {
-      loadTransactions();
-      loadMonthlySummary();
-      loadYearlyIncomeData(); // Add this line
-
-    }
-  }, [selectedMonth]);
-  const loadYearlyIncomeData = async () => {
-  const data = await getYearlyIncomeData();
-  setYearlyIncomeData(data);
-};
+  
+  
 
   const loadAvailableMonths = async () => {
     try {
@@ -58,23 +46,23 @@ const Analytics: React.FC = () => {
     }
   };
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     try {
       const response = await transactionAPI.getTransactions(selectedMonth);
       setTransactions(response.data);
     } catch (error) {
       console.error('Error loading transactions:', error);
     }
-  };
+  }, [selectedMonth]);
 
-  const loadMonthlySummary = async () => {
+  const loadMonthlySummary = useCallback(async () => {
     try {
       const response = await transactionAPI.getMonthlySummary(selectedMonth);
       setSummary(response.data);
     } catch (error) {
       console.error('Error loading summary:', error);
     }
-  };
+  }, [selectedMonth]);
 
   // Income by Client/Name
   const getIncomeByClientData = () => {
@@ -99,7 +87,7 @@ const Analytics: React.FC = () => {
   // Yearly Income Data
   // Yearly Income Data with Monthly Breakdown
 // Yearly Income Data - All months of the year
-const getYearlyIncomeData = async () => {
+const getYearlyIncomeData = useCallback(async () => {
   try {
     const monthlyData: { month: string; income: number }[] = [];
     
@@ -140,7 +128,20 @@ const getYearlyIncomeData = async () => {
     console.error('Error fetching yearly income data:', error);
     return [];
   }
-};
+},[selectedMonth]);
+
+const loadYearlyIncomeData = useCallback(async () => {
+  const data = await getYearlyIncomeData();
+  setYearlyIncomeData(data);
+}, [getYearlyIncomeData]);
+
+useEffect(() => {
+    if (selectedMonth) {
+      loadTransactions();
+      loadMonthlySummary();
+      loadYearlyIncomeData();
+    }
+  }, [selectedMonth, loadTransactions, loadMonthlySummary, loadYearlyIncomeData]);
 
   const getIncomeExpenseData = () => {
     const dailyData: { [key: string]: { income: number; expense: number } } = {};
