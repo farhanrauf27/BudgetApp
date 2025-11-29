@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Transaction, MonthlySummary } from '../types';
 
-const API_URL = 'https://budgetbackend-5upp.onrender.com/api';
+const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_URL,
