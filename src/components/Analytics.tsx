@@ -17,6 +17,7 @@ import {
 import { transactionAPI } from '../services/api';
 import { Transaction, MonthlySummary } from '../types';
 import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#8dd1e1'];
 
@@ -121,7 +122,6 @@ const getYearlyIncomeData = useCallback(async () => {
       }
     }
     
-    console.log('Yearly Income Data:', monthlyData);
     return monthlyData;
     
   } catch (error) {
@@ -168,38 +168,385 @@ useEffect(() => {
       .sort((a, b) => parseInt(a.date.split(' ')[1]) - parseInt(b.date.split(' ')[1]));
   };
 
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-    const monthName = formatMonth(selectedMonth);
 
-    // Title
-    doc.setFontSize(20);
-    doc.text(`Budget Report - ${monthName}`, 20, 20);
 
-    // Summary
-    doc.setFontSize(12);
-    doc.text(`Total Income: Rs ${summary?.totalIncome.toLocaleString()}`, 20, 40);
-    doc.text(`Total Expenses: Rs ${summary?.totalExpenses.toLocaleString()}`, 20, 50);
-    doc.text(`Savings: Rs ${summary?.savings.toLocaleString()}`, 20, 60);
+      const downloadPDF = () => {
+  const doc = new jsPDF();
+  const monthName = formatMonth(selectedMonth);
+  const currentDate = new Date().toLocaleDateString();
 
-    // Transactions
-    doc.text('Transactions:', 20, 80);
-    let yPosition = 90;
-    transactions.forEach((transaction, index) => {
-      if (yPosition > 270) {
+  // Separate income and expense transactions
+  const incomeTransactions = transactions.filter(t => t.type === 'income');
+  const expenseTransactions = transactions.filter(t => t.type === 'expense');
+  
+  // Calculate totals
+  const totalIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const savings = totalIncome - totalExpenses;
+
+  // Page setup
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  const margin = 20;
+  const contentWidth = pageWidth - 2 * margin;
+
+  let yPosition = margin;
+
+  // ========== MODERN HEADER ==========
+  // Subtle gradient-like background (light blue to white)
+  doc.setFillColor(240, 245, 255);
+  doc.rect(0, 0, pageWidth, 80, 'F');
+  
+  // Main title
+  doc.setTextColor(30, 41, 59); // slate-900
+  doc.setFontSize(28);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Financial Report', pageWidth / 2, yPosition + 25, { align: 'center' });
+  
+  // Month and date
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'normal');
+  doc.text(monthName, pageWidth / 2, yPosition + 40, { align: 'center' });
+  
+  doc.setFontSize(10);
+  doc.setTextColor(100, 116, 139); // slate-500
+  doc.text(`Generated on ${currentDate}`, pageWidth / 2, yPosition + 50, { align: 'center' });
+  
+  yPosition = 90;
+
+  // ========== QUICK STATS SECTION ==========
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('Quick Overview', margin, yPosition);
+  
+  yPosition += 10;
+  
+  // Stats container
+  doc.setDrawColor(226, 232, 240); // slate-200
+  doc.setLineWidth(0.5);
+  doc.roundedRect(margin, yPosition, contentWidth, 40, 3, 3, 'S');
+  
+  // Income stat
+  // Quick Stats Section with proper spacing
+const statBoxWidth = (contentWidth - 40) / 3; // 3 boxes with spacing
+
+// Income stat - Left
+doc.setFontSize(12);
+doc.setFont('helvetica', 'normal');
+doc.setTextColor(100, 116, 139);
+doc.text('Income', margin + statBoxWidth/2, yPosition + 15, { align: 'center' });
+doc.setFontSize(18);
+doc.setFont('helvetica', 'bold');
+doc.setTextColor(22, 163, 74); // emerald-600
+doc.text(`Rs ${totalIncome.toLocaleString()}`, margin + statBoxWidth/2, yPosition + 30, { align: 'center' });
+
+// Expense stat - Middle
+doc.setFontSize(12);
+doc.setFont('helvetica', 'normal');
+doc.setTextColor(100, 116, 139);
+doc.text('Expenses', margin + statBoxWidth + 20 + statBoxWidth/2, yPosition + 15, { align: 'center' });
+doc.setFontSize(18);
+doc.setFont('helvetica', 'bold');
+doc.setTextColor(220, 38, 38); // red-600
+doc.text(`Rs ${totalExpenses.toLocaleString()}`, margin + statBoxWidth + 20 + statBoxWidth/2, yPosition + 30, { align: 'center' });
+
+// Savings stat - Right
+doc.setFontSize(12);
+doc.setFont('helvetica', 'normal');
+doc.setTextColor(100, 116, 139);
+doc.text('Net Savings', margin + (2 * statBoxWidth) + 40 + statBoxWidth/2, yPosition + 15, { align: 'center' });
+doc.setFontSize(18);
+doc.setFont('helvetica', 'bold');
+if (savings >= 0) {
+  doc.setTextColor(22, 163, 74); // green for positive
+} else {
+  doc.setTextColor(220, 38, 38); // red for negative
+}
+doc.text(`Rs ${Math.abs(savings).toLocaleString()}`, margin + (2 * statBoxWidth) + 40 + statBoxWidth/2, yPosition + 30, { align: 'center' });
+
+// Add savings indicator (Surplus/Deficit)
+doc.setFontSize(8);
+doc.setTextColor(100, 116, 139);
+doc.text(savings >= 0 ? '(Surplus)' : '(Deficit)', margin + (2 * statBoxWidth) + 40 + statBoxWidth/2, yPosition + 35, { align: 'center' });
+
+if (savings >= 0) {
+  doc.setTextColor(22, 163, 74); // Emerald green
+} else {
+  doc.setTextColor(220, 38, 38); // Red
+}  doc.text(`Rs ${Math.abs(savings).toLocaleString()}`, margin + contentWidth - 70, yPosition + 30);
+  doc.setFontSize(8);
+  doc.text(savings >= 0 ? '(Surplus)' : '(Deficit)', margin + contentWidth - 70, yPosition + 35);
+  
+  yPosition += 50;
+
+  // ========== INCOME TRANSACTIONS SECTION ==========
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('Income Details', margin, yPosition);
+  
+  yPosition += 10;
+  
+  // Income table header
+  doc.setFillColor(240, 253, 244); 
+  doc.roundedRect(margin, yPosition, contentWidth, 10, 2, 2, 'F');
+  doc.setDrawColor(187, 247, 208); 
+  doc.rect(margin, yPosition, contentWidth, 10);
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(22, 101, 52); 
+  
+  const incomeCols = [20, 80, contentWidth - 100];
+  doc.text('#', margin + incomeCols[0], yPosition + 7);
+  doc.text('Description', margin + incomeCols[1], yPosition + 15);
+  doc.text('Amount', margin + incomeCols[2], yPosition + 7);
+  
+  yPosition += 12;
+  
+  // Income table rows
+  if (incomeTransactions.length === 0) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(148, 163, 184); 
+    doc.text('No income transactions for this period', margin + 10, yPosition);
+    yPosition += 15;
+  } else {
+    incomeTransactions.forEach((transaction, index) => {
+      if (yPosition > pageHeight - 30) {
         doc.addPage();
-        yPosition = 20;
+        yPosition = margin;
       }
-      doc.text(
-        `${index + 1}. ${transaction.description} - Rs ${transaction.amount} (${transaction.type})`,
-        25,
-        yPosition
-      );
-      yPosition += 10;
+      
+      if (index % 2 === 0) {
+        doc.setFillColor(255, 255, 255);
+      } else {
+        doc.setFillColor(248, 250, 252);
+      }
+      doc.rect(margin, yPosition, contentWidth, 10, 'F');
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      
+      doc.text((index + 1).toString(), margin + incomeCols[0], yPosition + 7);
+      
+      const shortDate = new Date(transaction.date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+      const description = `${transaction.name}`;
+      doc.text(description, margin + incomeCols[1], yPosition + 7);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(shortDate, margin + incomeCols[1], yPosition + 12);
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      
+      // Amount
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(22, 163, 74);
+      doc.text(`Rs ${transaction.amount.toLocaleString()}`, margin + incomeCols[2], yPosition + 7, { align: 'right' });
+      
+      yPosition += 15; // Increased spacing for better readability
     });
+    
+    // Income total row
+    if (yPosition > pageHeight - 40) {
+      doc.addPage();
+      yPosition = margin;
+    }
+    
+    doc.setFillColor(220, 252, 231); // emerald-100
+    doc.roundedRect(margin, yPosition, contentWidth, 12, 2, 2, 'F');
+    doc.setDrawColor(134, 239, 172); // emerald-300
+    doc.rect(margin, yPosition, contentWidth, 12);
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(21, 128, 61); // emerald-700
+    doc.text('Total Income:', margin + 10, yPosition + 8);
+    doc.text(`Rs ${totalIncome.toLocaleString()}`, margin + contentWidth - 10, yPosition + 8, { align: 'right' });
+    
+    yPosition += 20;
+  }
 
-    doc.save(`budget-report-${selectedMonth}.pdf`);
-  };
+  // ========== EXPENSE TRANSACTIONS SECTION ==========
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('Expense Details', margin, yPosition);
+  
+  yPosition += 10;
+  
+  // Expense table header
+  doc.setFillColor(254, 242, 242); // red-50
+  doc.roundedRect(margin, yPosition, contentWidth, 10, 2, 2, 'F');
+  doc.setDrawColor(254, 202, 202); // red-200
+  doc.rect(margin, yPosition, contentWidth, 10);
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(153, 27, 27); // red-800
+  
+  const expenseCols = [20, 80, contentWidth - 100];
+  doc.text('#', margin + expenseCols[0], yPosition + 7);
+  doc.text('Description', margin + expenseCols[1], yPosition + 7);
+  doc.text('Amount', margin + expenseCols[2], yPosition + 7);
+  
+  yPosition += 12;
+  
+  // Expense table rows
+  if (expenseTransactions.length === 0) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(148, 163, 184); // slate-400
+    doc.text('No expense transactions for this period', margin + 10, yPosition);
+    yPosition += 15;
+  } else {
+    expenseTransactions.forEach((transaction, index) => {
+      // Check if we need a new page
+      if (yPosition > pageHeight - 30) {
+        doc.addPage();
+        yPosition = margin;
+      }
+      
+      // Alternating row background
+      if (index % 2 === 0) {
+        doc.setFillColor(255, 255, 255);
+      } else {
+        doc.setFillColor(248, 250, 252); // slate-50
+      }
+      doc.rect(margin, yPosition, contentWidth, 10, 'F');
+      
+      // Row content
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
+      
+      // Serial number
+      doc.text((index + 1).toString(), margin + expenseCols[0], yPosition + 7);
+      
+      // Description with date
+      const shortDate = new Date(transaction.date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+      const description = `${transaction.name}`;
+      doc.text(description, margin + expenseCols[1], yPosition + 7);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(shortDate, margin + expenseCols[1], yPosition + 12);
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      
+      // Amount
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(220, 38, 38);
+      doc.text(`Rs ${transaction.amount.toLocaleString()}`, margin + expenseCols[2], yPosition + 7, { align: 'right' });
+      
+      yPosition += 15; // Increased spacing for better readability
+    });
+    
+    // Expense total row
+    if (yPosition > pageHeight - 40) {
+      doc.addPage();
+      yPosition = margin;
+    }
+    
+    doc.setFillColor(254, 226, 226); // red-100
+    doc.roundedRect(margin, yPosition, contentWidth, 12, 2, 2, 'F');
+    doc.setDrawColor(252, 165, 165); // red-300
+    doc.rect(margin, yPosition, contentWidth, 12);
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(185, 28, 28); // red-700
+    doc.text('Total Expenses:', margin + 10, yPosition + 8);
+    doc.text(`Rs ${totalExpenses.toLocaleString()}`, margin + contentWidth - 10, yPosition + 8, { align: 'right' });
+    
+    yPosition += 20;
+  }
+
+  // ========== FINAL SUMMARY ==========
+  if (yPosition > pageHeight - 60) {
+    doc.addPage();
+    yPosition = margin;
+  }
+  
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('Final Summary', margin, yPosition);
+  
+  yPosition += 15;
+  
+  // Summary box
+  doc.setDrawColor(148, 163, 184); // slate-400
+  doc.setLineWidth(0.5);
+  doc.roundedRect(margin, yPosition, contentWidth, 50, 4, 4, 'S');
+  
+  // Summary content
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105); // slate-600
+  
+  // Income line
+  doc.text('Total Income:', margin + 20, yPosition + 15);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(22, 163, 74);
+  doc.text(`Rs ${totalIncome.toLocaleString()}`, margin + contentWidth - 20, yPosition + 15, { align: 'right' });
+  
+  // Expense line
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Total Expenses:', margin + 20, yPosition + 25);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(220, 38, 38);
+  doc.text(`Rs ${totalExpenses.toLocaleString()}`, margin + contentWidth - 20, yPosition + 25, { align: 'right' });
+  
+  // Divider line
+  doc.setDrawColor(226, 232, 240); // slate-200
+  doc.line(margin + 20, yPosition + 32, margin + contentWidth - 20, yPosition + 32);
+  
+  // Net Savings line
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Net Savings:', margin + 20, yPosition + 40);
+  doc.setFontSize(14);
+if (savings >= 0) {
+  doc.setTextColor(22, 163, 74); // Emerald green
+} else {
+  doc.setTextColor(220, 38, 38); // Red
+}  doc.text(`Rs ${Math.abs(savings).toLocaleString()}`, margin + contentWidth - 20, yPosition + 40, { align: 'right' });
+  
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(savings >= 0 ? '(Positive Balance)' : '(Negative Balance)', margin + contentWidth - 20, yPosition + 45, { align: 'right' });
+
+  // ========== FOOTER ==========
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    
+    // Page number
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+    
+    // Footer line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+    
+    // Company name
+    doc.text('BudgetTracker • Professional Financial Management', margin, pageHeight - 10);
+  }
+
+  // Save the PDF
+  doc.save(`financial-report-${selectedMonth}.pdf`);
+};
 
   const formatMonth = (monthYear: string) => {
     const [year, month] = monthYear.split('-');
@@ -241,7 +588,7 @@ useEffect(() => {
         <button
           onClick={downloadPDF}
           disabled={!transactions.length}
-          className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 disabled:from-slate-600 disabled:to-slate-700 text-white font-semibold px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-2xl flex items-center"
+          className="bg-gradient-to-r cursor-pointer from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 disabled:from-slate-600 disabled:to-slate-700 text-white font-semibold px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-2xl flex items-center"
         >
           <span className="mr-2">📄</span>
           Download PDF
@@ -249,12 +596,12 @@ useEffect(() => {
       </div>
 
       {/* Month Selector */}
-      <div className="mb-8 bg-slate-800/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl">
+      <div className="mb-8 bg-slate-800/50 backdrop-blur-lg rounded-2xl p-6 border border-slate-700/50 shadow-2xl ">
         <label className="block text-blue-200 font-semibold mb-3 text-lg">Select Month</label>
         <select
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(e.target.value)}
-          className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+          className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-300 cursor-pointer"
         >
           {availableMonths.map(month => (
             <option key={month} value={month} className="bg-slate-800">
@@ -486,7 +833,7 @@ useEffect(() => {
           stroke="#9CA3AF"
           fontSize={11}
           fontWeight="500"
-          tickFormatter={(value) => `₹${value >= 1000 ? `${(value/1000).toFixed(0)}k` : value}`}
+          tickFormatter={(value) => `Rs ${value >= 1000 ? `${(value/1000).toFixed(0)}k` : value}`}
           tickLine={false}
           axisLine={{ stroke: '#4B5563', strokeOpacity: 0.5 }}
         />

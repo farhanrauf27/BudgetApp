@@ -270,11 +270,11 @@ const TransactionList: React.FC = () => {
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 ">
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-slate-700 border border-slate-600 text-white rounded-xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="bg-slate-700 border cursor-pointer border-slate-600 text-white rounded-xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               {availableMonths.map(month => (
                 <option key={month} value={month} className="bg-slate-700">
@@ -285,7 +285,7 @@ const TransactionList: React.FC = () => {
 
             <button
               onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
+              className="bg-gradient-to-r cursor-pointer from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
             >
               <Create className="w-5 h-5" />
               Add Transaction
@@ -357,14 +357,14 @@ const TransactionList: React.FC = () => {
                     <div className="flex justify-center gap-2">
                       <button
                         onClick={() => handleEdit(transaction)}
-                        className="p-2 text-blue-400 hover:bg-slate-700 rounded-xl transition-colors duration-200"
+                        className="p-2 text-blue-400 hover:bg-slate-700 rounded-xl transition-colors duration-200 cursor-pointer"
                         title="Edit transaction"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(transaction)}
-                        className="p-2 text-rose-400 hover:bg-slate-700 rounded-xl transition-colors duration-200"
+                        className="p-2 text-rose-400 hover:bg-slate-700 rounded-xl transition-colors duration-200 cursor-pointer"
                         title="Delete transaction"
                       >
                         <Delete className="w-4 h-4" />

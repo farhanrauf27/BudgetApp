@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { Transaction, MonthlySummary } from '../types';
 
-const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
+// const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
+const API_URL = 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -21,6 +22,8 @@ export const authAPI = {
     api.post('/auth/register', userData),
   login: (credentials: { email: string; password: string }) =>
     api.post('/auth/login', credentials),
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    api.post('/auth/change-password', data),
 };
 
 // ... existing code ...

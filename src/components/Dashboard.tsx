@@ -2,7 +2,8 @@ import React, { useState, useEffect,useCallback  } from 'react';
 import { transactionAPI } from '../services/api';
 import { Transaction, MonthlySummary } from '../types';
 import TransactionForm from './Transactions';
-import { Calendar } from 'lucide-react';
+import { Calendar, Loader, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const Dashboard: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>('');
@@ -11,19 +12,23 @@ const Dashboard: React.FC = () => {
   const [, setSummary] = useState<MonthlySummary | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [openingBalance, setOpeningBalance] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(true); // Add loading state
+  const [loadingProgress, setLoadingProgress] = useState(0); 
 
   useEffect(() => {
     loadAvailableMonths();
   }, []);
 
-
-  const loadAvailableMonths = async () => {
+ const loadAvailableMonths = async () => {
     try {
+      setIsLoading(true);
+      setLoadingProgress(20);
       const months = await transactionAPI.getAvailableMonths();
       setAvailableMonths(months.data);
       if (months.data.length > 0) {
         setSelectedMonth(months.data[0]);
       }
+      setLoadingProgress(40);
     } catch (error) {
       console.error('Error loading months:', error);
     }
@@ -31,8 +36,10 @@ const Dashboard: React.FC = () => {
 
   const loadTransactions = useCallback(async () => {
     try {
+      setLoadingProgress(60);
       const response = await transactionAPI.getTransactions(selectedMonth);
       setTransactions(response.data);
+      setLoadingProgress(80);
     } catch (error) {
       console.error('Error loading transactions:', error);
     }
@@ -48,53 +55,58 @@ const Dashboard: React.FC = () => {
   }, [selectedMonth]);
 
   const calculateOpeningBalance = useCallback(async () => {
-  try {
-    
-    if (!selectedMonth || availableMonths.length === 0) {
-      setOpeningBalance(0);
-      return;
-    }
+    try {
+      if (!selectedMonth || availableMonths.length === 0) {
+        setOpeningBalance(0);
+        return;
+      }
 
-    // Sort months chronologically (oldest first)
-    const sortedMonths = [...availableMonths].sort();
-    
-    const currentIndex = sortedMonths.indexOf(selectedMonth);
-    
-    if (currentIndex === 0) {
-      // First month - opening balance is 0
-      setOpeningBalance(0);
-      return;
-    }
-
-    // Calculate cumulative balance from all previous months
-    let cumulativeBalance = 0;
-    
-    // Process each month from the beginning up to the month before current
-    for (let i = 0; i < currentIndex; i++) {
-      const month = sortedMonths[i];
-      const monthSummary = await transactionAPI.getMonthlySummary(month);
+      // Sort months chronologically (oldest first)
+      const sortedMonths = [...availableMonths].sort();
       
-      // Opening Balance + Income - Expenses = Current Balance
-      // This current balance becomes the opening balance for next month
-      cumulativeBalance = cumulativeBalance + monthSummary.data.totalIncome - monthSummary.data.totalExpenses;
+      const currentIndex = sortedMonths.indexOf(selectedMonth);
       
-    }
-    
-    setOpeningBalance(cumulativeBalance);
-    
-  } catch (error) {
-    console.error('Error calculating opening balance:', error);
-    setOpeningBalance(0);
-  }
-}, [selectedMonth, availableMonths]);
+      if (currentIndex === 0) {
+        // First month - opening balance is 0
+        setOpeningBalance(0);
+        return;
+      }
 
-useEffect(() => {
-  if (selectedMonth) {
-    loadTransactions();
-         loadMonthlySummary();
-   calculateOpeningBalance();
-}
-}, [selectedMonth, loadTransactions, loadMonthlySummary, calculateOpeningBalance]);
+      // Calculate cumulative balance from all previous months
+      let cumulativeBalance = 0;
+      
+      // Process each month from the beginning up to the month before current
+      for (let i = 0; i < currentIndex; i++) {
+        const month = sortedMonths[i];
+        const monthSummary = await transactionAPI.getMonthlySummary(month);
+        
+        cumulativeBalance = cumulativeBalance + monthSummary.data.totalIncome - monthSummary.data.totalExpenses;
+      }
+      
+      setOpeningBalance(cumulativeBalance);
+      setLoadingProgress(100);
+      
+      // Small delay to show completion
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 300);
+      
+    } catch (error) {
+      console.error('Error calculating opening balance:', error);
+      setOpeningBalance(0);
+      setIsLoading(false);
+    }
+  }, [selectedMonth, availableMonths]);
+
+  useEffect(() => {
+    if (selectedMonth) {
+      setIsLoading(true);
+      setLoadingProgress(0);
+      loadTransactions();
+      loadMonthlySummary();
+      calculateOpeningBalance();
+    }
+  }, [selectedMonth, loadTransactions, loadMonthlySummary, calculateOpeningBalance]);
 
   const formatMonth = (monthYear: string) => {
     const [year, month] = monthYear.split('-');
@@ -123,178 +135,423 @@ useEffect(() => {
     });
   };
 
-//   const downloadExcel = async () => {
-//   try {
-//     // Get all transactions for all months
-//     const allTransactions = await transactionAPI.getTransactions();
-    
-//     // Group transactions by month
-//     const transactionsByMonth: { [key: string]: Transaction[] } = {};
-    
-//     allTransactions.data.forEach((transaction: Transaction) => {
-//       const monthYear = transaction.date.substring(0, 7); // YYYY-MM format
-//       if (!transactionsByMonth[monthYear]) {
-//         transactionsByMonth[monthYear] = [];
-//       }
-//       transactionsByMonth[monthYear].push(transaction);
-//     });
+  // Download Excel Report
 
-//     // Create Excel data with better structure
-//     const excelData: (string | number)[][] = [];
+const downloadExcel = async () => {
+  try {
+    // Get all transactions for all months
+    const allTransactions = await transactionAPI.getTransactions();
     
-//     // Add title row
-//     excelData.push(['Financial Transactions Report', '', '', '', '', '']);
-//     excelData.push(['Generated on:', new Date().toLocaleDateString(), '', '', '', '']);
-//     excelData.push([]); // Empty row
+    // Group transactions by month
+    const transactionsByMonth: { [key: string]: Transaction[] } = {};
+    
+    allTransactions.data.forEach((transaction: Transaction) => {
+      const monthYear = transaction.date.substring(0, 7); // YYYY-MM format
+      if (!transactionsByMonth[monthYear]) {
+        transactionsByMonth[monthYear] = [];
+      }
+      transactionsByMonth[monthYear].push(transaction);
+    });
 
-//     // Sort months chronologically
-//     const sortedMonths = Object.keys(transactionsByMonth).sort();
-    
-//     // Track previous month's balance for cumulative calculation
-//     let previousMonthBalance = 0;
-    
-//     // Add data for each month
-//     sortedMonths.forEach((month, monthIndex) => {
-//       const monthTransactions = transactionsByMonth[month];
-      
-//       // Add month header with styling
-//       excelData.push([formatMonth(month), '', '', '', '', '']);
-//       excelData.push([]); // Empty row
-      
-//       // Add Opening Balance
-//       excelData.push(['Opening Balance', '', '', '', previousMonthBalance]);
-      
-      
-//       // Add table headers
-//       excelData.push([
-//         'Date',
-//         'Name', 
-//         'Description',
-//         'Type',
-//         'Amount (PKR)'
-//       ]);
-      
-//       cons incomeRowStart = 0;
-//       let expenseRowStart = 0;
-      
-//       // Add income transactions first
-//       const incomeTransactions = monthTransactions.filter(t => t.type === 'income');
-//       if (incomeTransactions.length > 0) {
-//         incomeRowStart = excelData.length + 1;
-//         incomeTransactions.forEach((transaction) => {
-//           excelData.push([
-//             formatDate(transaction.date),
-//             transaction.name,
-//             transaction.description || '',
-//             'Income',
-//             transaction.amount
-//           ]);
-//         });
-//       }
-      
-//       // Add expense transactions
-//       const expenseTransactions = monthTransactions.filter(t => t.type === 'expense');
-//       if (expenseTransactions.length > 0) {
-//         expenseRowStart = excelData.length + 1;
-//         expenseTransactions.forEach((transaction) => {
-//           excelData.push([
-//             formatDate(transaction.date),
-//             transaction.name,
-//             transaction.description || '',
-//             'Expense',
-//             -transaction.amount
-//           ]);
-//         });
-//       }
-      
-//       // Add summary section
-//       excelData.push([]);
-//       excelData.push(['Monthly Summary', '', '', '', '']);  
-      
-      
-//       // Store this month's balance for next month's opening balance
-//       const monthlyIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
-//       const monthlyExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
-//       previousMonthBalance = previousMonthBalance + monthlyIncome - monthlyExpenses;
-      
-//       // Add empty rows between months
-//       excelData.push([]);
-//       excelData.push([]);
-//     });
+    // Create Excel workbook with multiple sheets
+    const workbook = {
+      SheetNames: [] as string[],
+      Sheets: {} as any
+    };
 
-//     // Add grand summary at the end
-//     excelData.push(['GRAND SUMMARY', '', '', '', '']);
+    // Sort months chronologically
+    const sortedMonths = Object.keys(transactionsByMonth).sort();
     
-//     // Find all summary rows and create formulas
-//     let grandIncomeFormula = '=';
-//     let grandExpensesFormula = '=';
+    // Track cumulative balance for opening balances
+    let cumulativeBalance = 0;
     
-//     sortedMonths.forEach((month, index) => {
-//       // Calculate row numbers for each month's summary
-//       const monthOffset = 10 + (index * 18); // Adjusted offset for opening balance
-//       grandIncomeFormula += (index > 0 ? '+' : '') + `E${monthOffset + 4}`; // Total Income rows
-//       grandExpensesFormula += (index > 0 ? '+' : '') + `E${monthOffset + 5}`; // Total Expenses rows
-//     });
+    sortedMonths.forEach((month, monthIndex) => {
+      const monthTransactions = transactionsByMonth[month];
+      const sheetName = formatMonth(month).substring(0, 31); // Excel sheet name limit
+      workbook.SheetNames.push(sheetName);
+      
+      // Separate income and expense transactions
+      const incomeTransactions = monthTransactions.filter(t => t.type === 'income');
+      const expenseTransactions = monthTransactions.filter(t => t.type === 'expense');
+      
+      // Calculate totals
+      const totalIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
+      const totalExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
+      const monthlyBalance = totalIncome - totalExpenses;
+      
+      // Prepare data for the sheet
+      const sheetData: (string | number)[][] = [];
+      
+      // Header Section
+      sheetData.push([`${formatMonth(month)} - Financial Transactions`, '', '', '']);
+      sheetData.push(['Generated on:', new Date().toLocaleDateString(), '', '']);
+      sheetData.push([]);
+      
+      // Opening Balance
+      sheetData.push(['Opening Balance:', '', '', cumulativeBalance]);
+      sheetData.push([]);
+      
+      // Column Headers
+      sheetData.push(['INCOME TRANSACTIONS', '', 'EXPENSE TRANSACTIONS', '']);
+      sheetData.push(['Date', 'Title','Amount (PKR)', 'Date', 'Title','Description','Amount (PKR)']);
+      // sheetData.push(['', 'Amount (PKR)', '', 'Amount (PKR)']);
+      sheetData.push([]);
+      
+      // Find max rows between income and expenses
+      const maxRows = Math.max(incomeTransactions.length, expenseTransactions.length);
+      
+      // Add transaction rows
+      for (let i = 0; i < maxRows; i++) {
+        const incomeRow = incomeTransactions[i];
+        const expenseRow = expenseTransactions[i];
+        
+        const rowData = [
+          incomeRow ? formatDate(incomeRow.date) : '',
+          incomeRow ? incomeRow.name : '',
+          incomeRow ? incomeRow.amount : '',
+          expenseRow ? formatDate(expenseRow.date) : '',
+          expenseRow ? expenseRow.name + (expenseRow.description ? ` - ${expenseRow.description}` : '') : '',
+          expenseRow ? expenseRow.description : '',
+          expenseRow ? expenseRow.amount : ''
+        ];
+        sheetData.push(rowData);
+      }
+      
+      // Add summary rows
+      sheetData.push([]);
+      sheetData.push(['INCOME SUMMARY', '', 'EXPENSE SUMMARY', '']);
+      sheetData.push(['Total Income:', totalIncome, 'Total Expenses:', totalExpenses]);
+      sheetData.push(['Number of Transactions:', incomeTransactions.length, 'Number of Transactions:', expenseTransactions.length]);
+      sheetData.push(['Average Income:', incomeTransactions.length > 0 ? (totalIncome / incomeTransactions.length).toFixed(2) : 0, 
+                      'Average Expense:', expenseTransactions.length > 0 ? (totalExpenses / expenseTransactions.length).toFixed(2) : 0]);
+      sheetData.push([]);
+      
+      // Net Balance Section
+      sheetData.push(['MONTHLY NET BALANCE', '', '', '']);
+      sheetData.push(['Opening Balance:', '', '', cumulativeBalance]);
+      sheetData.push(['+ Total Income:', '', '', totalIncome]);
+      sheetData.push(['- Total Expenses:', '', '', totalExpenses]);
+      sheetData.push(['= Closing Balance:', '', '', cumulativeBalance + monthlyBalance]);
+      sheetData.push([]);
+      
+      // Update cumulative balance for next month
+      cumulativeBalance += monthlyBalance;
+      
+      // Convert sheet data to worksheet
+      const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 15 }, // Date column
+        { wch: 30 }, // Description column  
+        { wch: 15 }, // Date column
+        { wch: 30 }, // Description column
+        { wch: 15 }, // Amount column
+        { wch: 15 }  // Amount column
+      ];
+      worksheet['!cols'] = colWidths;
+      
+      // Add styling through cell types
+      Object.keys(worksheet).forEach(cellAddress => {
+        if (cellAddress === '!ref' || cellAddress === '!cols') return;
+        
+        
+        const cell = worksheet[cellAddress];
+const { c: col, r: row } = XLSX.utils.decode_cell(cellAddress);        
+        // Style headers
+        if (row <= 3) {
+          cell.s = {
+            font: { bold: true, sz: 12 },
+            fill: { fgColor: { rgb: "E8F5E9" } }
+          };
+        }
+        
+        // Style totals
+        if (cell.v === 'Total Income:' || cell.v === 'Total Expenses:' || 
+            cell.v === 'Opening Balance:' || cell.v === 'Closing Balance:') {
+          cell.s = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: "FFF3E0" } }
+          };
+        }
+        
+        // Style amount cells
+        if ((col === 4 || col === 5) && typeof cell.v === 'number') {
+          cell.s = {
+            numFmt: '#,##0.00'
+          };
+        }
+      });
+      
+      workbook.Sheets[sheetName] = worksheet;
+    });
     
-//     excelData.push(['', '', '', 'Total Income (All Months):', grandIncomeFormula]);
-//     excelData.push(['', '', '', 'Total Expenses (All Months):', grandExpensesFormula]);
-//     excelData.push(['', '', '', 'Final Balance:', 
-//       `=E${excelData.length - 2}-E${excelData.length - 1}`
-//     ]);
+    // Create Summary Sheet
+    const summarySheetName = 'Summary';
+    workbook.SheetNames.unshift(summarySheetName);
+    
+    const summaryData: (string | number)[][] = [
+      ['FINANCIAL SUMMARY REPORT'],
+      ['Generated on:', new Date().toLocaleDateString()],
+      [],
+      ['Month', 'Opening Balance', 'Total Income', 'Total Expenses', 'Net Balance', 'Closing Balance']
+    ];
+    
+    let runningBalance = 0;
+    sortedMonths.forEach(month => {
+      const monthTransactions = transactionsByMonth[month];
+      const income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const expenses = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+      const netBalance = income - expenses;
+      const openingBalance = runningBalance;
+      const closingBalance = runningBalance + netBalance;
+      
+      summaryData.push([
+        formatMonth(month),
+        openingBalance,
+        income,
+        expenses,
+        netBalance,
+        closingBalance
+      ]);
+      
+      runningBalance = closingBalance;
+    });
+    
+    // Add totals row
+    summaryData.push([]);
+    summaryData.push(['TOTALS', 
+      `=SUM(B5:B${summaryData.length - 1})`,
+      `=SUM(C5:C${summaryData.length - 1})`,
+      `=SUM(D5:D${summaryData.length - 1})`,
+      `=SUM(E5:E${summaryData.length - 1})`,
+      ''
+    ]);
+    
+    const summaryWorksheet = XLSX.utils.aoa_to_sheet(summaryData);
+    
+    // Style summary sheet
+    Object.keys(summaryWorksheet).forEach(cellAddress => {
+      if (cellAddress === '!ref') return;
+      
+      const cell = summaryWorksheet[cellAddress];
+const { c: col, r: row } = XLSX.utils.decode_cell(cellAddress);      
+      // Style header
+      if (row <= 3) {
+        cell.s = {
+          font: { bold: true, sz: 14 },
+          fill: { fgColor: { rgb: "E3F2FD" } }
+        };
+      }
+      
+      // Style totals row
+      if (row === summaryData.length - 1) {
+        cell.s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "FFF3E0" } },
+          border: {
+            top: { style: 'medium', color: { rgb: "000000" } }
+          }
+        };
+      }
+      
+      // Format numbers
+      if (col >= 1 && col <= 5 && row >= 4 && typeof cell.v === 'number') {
+        cell.s = {
+          numFmt: '#,##0.00'
+        };
+      }
+    });
+    
+    summaryWorksheet['!cols'] = [
+      { wch: 25 }, // Month
+      { wch: 15 }, // Opening Balance
+      { wch: 15 }, // Income
+      { wch: 15 }, // Expenses
+      { wch: 15 }, // Net Balance
+      { wch: 15 }  // Closing Balance
+    ];
+    
+    workbook.Sheets[summarySheetName] = summaryWorksheet;
+    
+    // Download the Excel file
+    XLSX.writeFile(workbook, `financial-report-${new Date().toISOString().split('T')[0]}.xlsx`);
+    
+  } catch (error) {
+    console.error('Error downloading Excel file:', error);
+    alert('Error downloading transactions file');
+  }
+};
+if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex flex-col items-center justify-center p-6">
+        {/* Animated Background */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
+        </div>
 
-//     // Convert to CSV with proper formatting
-//     const csvContent = excelData.map((row) => {
-//       return row.map(cell => {
-//         if (cell === null || cell === undefined) return '""';
-//         if (typeof cell === 'number') return cell.toString();
-//         return `"${cell}"`;
-//       }).join(',');
-//     }).join('\n');
+        {/* Loading Container */}
+        <div className="relative z-10 bg-slate-800/40 backdrop-blur-xl rounded-3xl p-12 border border-slate-700/50 shadow-2xl max-w-2xl w-full">
+          {/* Logo/Brand */}
+          <div className="flex flex-col items-center mb-10">
+            <div className="relative">
+              <div className="w-24 h-24 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center animate-pulse">
+                <Wallet className="w-12 h-12 text-white" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center animate-bounce">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+              <div className="absolute -bottom-2 -left-2 w-10 h-10 bg-rose-500 rounded-full flex items-center justify-center animate-bounce delay-300">
+                <TrendingDown className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-white mt-6">BudgetTracker</h1>
+            <p className="text-cyan-300 mt-2">Loading your financial dashboard</p>
+          </div>
 
-//     // Create and download file
-//     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-//     const link = document.createElement('a');
-//     const url = URL.createObjectURL(blob);
-    
-//     link.setAttribute('href', url);
-//     link.setAttribute('download', `financial-report-${new Date().toISOString().split('T')[0]}.csv`);
-//     link.style.visibility = 'hidden';
-    
-//     document.body.appendChild(link);
-//     link.click();
-//     document.body.removeChild(link);
-    
-//   } catch (error) {
-//     console.error('Error downloading Excel file:', error);
-//     alert('Error downloading transactions file');
-//   }
-// };
+          {/* Progress Bar */}
+          <div className="mb-8">
+            <div className="flex justify-between text-sm text-slate-300 mb-2">
+              <span>Loading financial data...</span>
+              <span>{loadingProgress}%</span>
+            </div>
+            <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${loadingProgress}%` }}
+              ></div>
+            </div>
+          </div>
+
+          {/* Loading Steps */}
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 30 ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-slate-700/30'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 30 ? 'bg-cyan-500/20' : 'bg-slate-600/50'}`}>
+                <Calendar className={`w-5 h-5 ${loadingProgress >= 30 ? 'text-cyan-400' : 'text-slate-400'}`} />
+              </div>
+              <p className={`text-sm font-medium ${loadingProgress >= 30 ? 'text-cyan-300' : 'text-slate-400'}`}>
+                {loadingProgress >= 30 ? '✓' : '...'} Loading Months
+              </p>
+            </div>
+
+            <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 60 ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-slate-700/30'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 60 ? 'bg-blue-500/20' : 'bg-slate-600/50'}`}>
+                <TrendingUp className={`w-5 h-5 ${loadingProgress >= 60 ? 'text-blue-400' : 'text-slate-400'}`} />
+              </div>
+              <p className={`text-sm font-medium ${loadingProgress >= 60 ? 'text-blue-300' : 'text-slate-400'}`}>
+                {loadingProgress >= 60 ? '✓' : '...'} Loading Transactions
+              </p>
+            </div>
+
+            <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 90 ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-slate-700/30'}`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 90 ? 'bg-emerald-500/20' : 'bg-slate-600/50'}`}>
+                <Wallet className={`w-5 h-5 ${loadingProgress >= 90 ? 'text-emerald-400' : 'text-slate-400'}`} />
+              </div>
+              <p className={`text-sm font-medium ${loadingProgress >= 90 ? 'text-emerald-300' : 'text-slate-400'}`}>
+                {loadingProgress >= 90 ? '✓' : '...'} Calculating Balances
+              </p>
+            </div>
+          </div>
+
+          {/* Loading Messages */}
+          <div className="text-center">
+            <div className="inline-block bg-slate-700/50 rounded-full px-4 py-2 mb-4">
+              <div className="flex items-center gap-2">
+                <Loader className="w-4 h-4 text-cyan-400 animate-spin" />
+                <p className="text-slate-300 text-sm">
+                  {loadingProgress < 30 && "Preparing your financial dashboard..."}
+                  {loadingProgress >= 30 && loadingProgress < 60 && "Loading monthly transactions..."}
+                  {loadingProgress >= 60 && loadingProgress < 90 && "Calculating opening balances..."}
+                  {loadingProgress >= 90 && "Finalizing your financial overview..."}
+                </p>
+              </div>
+            </div>
+            
+            <p className="text-slate-400 text-sm max-w-md mx-auto">
+              {loadingProgress < 50 
+                ? "We're gathering your financial data from all sources to give you a complete picture."
+                : "Analyzing your income and expenses to provide actionable insights for better financial management."
+              }
+            </p>
+          </div>
+
+          {/* Decorative Elements */}
+          <div className="absolute -bottom-6 -right-6 w-32 h-32 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 rounded-full blur-2xl"></div>
+          <div className="absolute -top-6 -left-6 w-32 h-32 bg-gradient-to-r from-indigo-500/20 to-purple-600/20 rounded-full blur-2xl"></div>
+        </div>
+
+        {/* Footer Note */}
+        <div className="mt-8 text-center">
+          <p className="text-slate-500 text-sm">
+            Please wait while we prepare your financial dashboard
+          </p>
+          <p className="text-slate-600 text-xs mt-1">
+            This usually takes just a few moments...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
       {/* Header */}
       {/* Header */}
-<div className="flex justify-between items-center mb-8">
-  <div>
-    <h1 className="text-4xl font-bold text-white mb-2">Financial Dashboard</h1>
-    <p className="text-blue-200 text-lg">Track your income and expenses</p>
+<div className="mb-8">
+  {/* Mobile Layout (shown on small screens) */}
+  <div className="block lg:hidden">
+    <div className="mb-6">
+      <h1 className="text-3xl font-bold text-white mb-2">Financial Dashboard</h1>
+      <p className="text-blue-200">Track your income and expenses</p>
+    </div>
+    
+    <div className="flex flex-col sm:flex-row gap-3 ">
+      <button 
+        onClick={downloadExcel}
+        className="w-full sm:w-auto bg-gradient-to-r  from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-4 py-3 rounded-xl font-semibold text-white shadow-xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2 cursor-pointer"
+      >
+        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span className="truncate">Download Excel</span>
+      </button>
+      <button 
+        onClick={() => setShowForm(true)}
+        className="w-full cursor-pointer sm:w-auto bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 px-4 py-3 rounded-xl font-semibold text-white shadow-xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+      >
+        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+        <span>Add Transaction</span>
+      </button>
+    </div>
   </div>
-  <div className="flex gap-4">
-    <button 
-      // onClick={downloadExcel}
-      className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-6 py-4 rounded-xl font-semibold text-white shadow-2xl transition-all duration-300 hover:scale-105 flex items-center gap-2"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-      Download Excel
-    </button>
-    <button 
-      onClick={() => setShowForm(true)}
-      className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 px-8 py-4 rounded-xl font-semibold text-white shadow-2xl transition-all duration-300 hover:scale-105"
-    >
-      + Add Transaction
-    </button>
+
+  {/* Desktop Layout (shown on larger screens) */}
+  <div className="hidden lg:flex justify-between items-center">
+    <div>
+      <h1 className="text-4xl font-bold text-white mb-2">Financial Dashboard</h1>
+      <p className="text-blue-200 text-lg">Track your income and expenses</p>
+    </div>
+    <div className="flex gap-4">
+      <button 
+        onClick={downloadExcel}
+        className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 px-6 py-4 rounded-xl font-semibold text-white shadow-2xl transition-all duration-300 hover:scale-105 flex items-center gap-2"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Download Excel
+      </button>
+      <button 
+        onClick={() => setShowForm(true)}
+        className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 px-8 py-4 rounded-xl font-semibold text-white shadow-2xl transition-all duration-300 hover:scale-105"
+      >
+        + Add Transaction
+      </button>
+    </div>
   </div>
 </div>
 
