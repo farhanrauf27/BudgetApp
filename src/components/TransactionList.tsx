@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Delete, Edit, TrendingUp, TrendingDown, Wallet, Loader, Calendar } from 'lucide-react';
 import { transactionAPI } from '../services/api';
 import { Transaction } from '../types';
@@ -6,17 +6,10 @@ import TransactionForm from './Transactions';
 import { Create } from '@mui/icons-material';
 import cache from '../services/cache';
 
-// Global state for shared data between components
-const transactionGlobalState = {
-  allTransactions: [] as Transaction[],
-  availableMonths: [] as string[],
-  lastFetch: 0
-};
-
 const TransactionList: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
-  const [availableMonths, setAvailableMonths] = useState<string[]>(transactionGlobalState.availableMonths);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -35,29 +28,37 @@ const TransactionList: React.FC = () => {
     expenseCount: 0
   });
 
-  // Load initial data only once
+  // Helper functions
+  const formatMonth = useCallback((monthYear: string) => {
+    const [year, month] = monthYear.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric'
+    });
+  }, []);
+
+  const formatDate = useCallback((dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  }, []);
+
+  const formatCurrency = useCallback((amount: number) => {
+    return `Rs ${amount.toLocaleString()}`;
+  }, []);
+
+  // Load initial data
   useEffect(() => {
     const initTransactionList = async () => {
-      // Check if we already have data in global state
-      if (transactionGlobalState.availableMonths.length > 0 && 
-          Date.now() - transactionGlobalState.lastFetch < 30000) {
-        setAvailableMonths(transactionGlobalState.availableMonths);
-        if (transactionGlobalState.availableMonths.length > 0) {
-          setSelectedMonth(transactionGlobalState.availableMonths[0]);
-        }
-        setIsLoading(false);
-        return;
-      }
-
       try {
         setIsLoading(true);
         setLoadingProgress(20);
         
-        // Check cache first
         const cachedMonths = cache.get('available-months');
         if (cachedMonths) {
           setAvailableMonths(cachedMonths);
-          transactionGlobalState.availableMonths = cachedMonths;
           if (cachedMonths.length > 0) {
             setSelectedMonth(cachedMonths[0]);
           }
@@ -65,15 +66,12 @@ const TransactionList: React.FC = () => {
         } else {
           const months = await transactionAPI.getAvailableMonths();
           setAvailableMonths(months);
-          transactionGlobalState.availableMonths = months;
           cache.set('available-months', months);
           if (months.length > 0) {
             setSelectedMonth(months[0]);
           }
           setLoadingProgress(40);
         }
-        
-        transactionGlobalState.lastFetch = Date.now();
         
       } catch (error) {
         console.error('Error loading months:', error);
@@ -84,61 +82,38 @@ const TransactionList: React.FC = () => {
     initTransactionList();
   }, []);
 
-  // Load all transactions with caching
+  // Load all transactions
   const loadAllTransactions = useCallback(async () => {
-    try {
-      setLoadingProgress(60);
-      
-      // Check cache first
-      const cachedTransactions = cache.get('transactions-all');
-      if (cachedTransactions) {
-        transactionGlobalState.allTransactions = cachedTransactions;
-        setLoadingProgress(80);
-        return cachedTransactions;
-      }
-      
-      const response = await transactionAPI.getTransactions();
-      transactionGlobalState.allTransactions = response;
-      cache.set('transactions-all', response);
-      setLoadingProgress(80);
-      
-      return response;
-    } catch (error) {
-      console.error('Error loading all transactions:', error);
-      return [];
-    }
+    const cachedTransactions = cache.get('transactions-all');
+    if (cachedTransactions) return cachedTransactions;
+    
+    const response = await transactionAPI.getTransactions();
+    cache.set('transactions-all', response);
+    return response;
   }, []);
 
-  // Optimized transaction loading with caching
+  // Load transactions for selected month
   const loadTransactions = useCallback(async (month: string) => {
-    try {
-      setLoadingProgress(60);
-      
-      // Check cache first
-      const cacheKey = `transactions-${month}`;
-      const cachedData = cache.get(cacheKey);
-      
-      if (cachedData) {
-        setTransactions(cachedData);
-        await calculateSummary(cachedData, month);
-        setLoadingProgress(80);
-        return cachedData;
-      }
-      
-      const response = await transactionAPI.getTransactions(month);
-      setTransactions(response);
-      cache.set(cacheKey, response);
-      await calculateSummary(response, month);
+    const cacheKey = `transactions-${month}`;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+      setTransactions(cachedData);
+      await calculateSummary(cachedData, month);
       setLoadingProgress(80);
-      
-      return response;
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      return [];
+      return cachedData;
     }
+    
+    const response = await transactionAPI.getTransactions(month);
+    setTransactions(response);
+    cache.set(cacheKey, response);
+    await calculateSummary(response, month);
+    setLoadingProgress(80);
+    
+    return response;
   }, []);
 
-  // Optimized summary calculation with caching
+  // Calculate summary
   const calculateSummary = useCallback(async (transactions: Transaction[], month: string) => {
     const incomeTransactions = transactions.filter(t => t.type === 'income');
     const expenseTransactions = transactions.filter(t => t.type === 'expense');
@@ -146,16 +121,11 @@ const TransactionList: React.FC = () => {
     const income = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
     const expenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
     
-    // Calculate balance from all previous months
     let previousBalance = 0;
     try {
-      // Use cached all transactions if available
-      const allTransactions = transactionGlobalState.allTransactions.length > 0 
-        ? transactionGlobalState.allTransactions 
-        : await loadAllTransactions();
-      
+      const allTransactions = await loadAllTransactions();
       const previousTransactions = allTransactions.filter((t: Transaction) => {
-        const transactionMonth = t.date.substring(0, 7); // YYYY-MM format
+        const transactionMonth = t.date.substring(0, 7);
         return transactionMonth < month;
       });
       
@@ -175,8 +145,6 @@ const TransactionList: React.FC = () => {
     });
     
     setLoadingProgress(100);
-    
-    // Small delay to show completion
     setTimeout(() => {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -189,39 +157,27 @@ const TransactionList: React.FC = () => {
       const loadMonthData = async () => {
         setIsRefreshing(true);
         setLoadingProgress(0);
-        
         await loadTransactions(selectedMonth);
       };
-      
       loadMonthData();
     }
   }, [selectedMonth, loadTransactions]);
 
   // Handle transaction updates
   const handleTransactionUpdated = useCallback(async () => {
-    // Clear cache for affected data
     cache.delete(`transactions-${selectedMonth}`);
     cache.delete('transactions-all');
     cache.delete('available-months');
     
-    // Clear global state
-    transactionGlobalState.allTransactions = [];
-    transactionGlobalState.availableMonths = [];
-    transactionGlobalState.lastFetch = 0;
-    
-    // Show refreshing overlay
     setIsRefreshing(true);
     setLoadingProgress(0);
     
     try {
-      // Reload months first
       const months = await transactionAPI.getAvailableMonths();
       setAvailableMonths(months);
-      transactionGlobalState.availableMonths = months;
       cache.set('available-months', months);
       
       if (months.includes(selectedMonth)) {
-        // Reload current month data
         await loadTransactions(selectedMonth);
       }
     } catch (error) {
@@ -230,6 +186,7 @@ const TransactionList: React.FC = () => {
     }
   }, [selectedMonth, loadTransactions]);
 
+  // Transaction actions
   const handleEdit = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setShowForm(true);
@@ -242,13 +199,11 @@ const TransactionList: React.FC = () => {
 
   const handleDeleteConfirm = async () => {
     if (!transactionToDelete) return;
-
     setLoading(true);
     setError('');
 
     try {
       await transactionAPI.deleteTransaction(transactionToDelete._id!);
-      // Clear cache and reload
       cache.delete(`transactions-${selectedMonth}`);
       cache.delete('transactions-all');
       cache.delete('available-months');
@@ -257,7 +212,6 @@ const TransactionList: React.FC = () => {
       setTransactionToDelete(null);
     } catch (error: any) {
       setError(error.response?.message || 'Failed to delete transaction');
-      console.error('Error deleting transaction:', error);
     } finally {
       setLoading(false);
     }
@@ -268,61 +222,34 @@ const TransactionList: React.FC = () => {
     setEditingTransaction(null);
   };
 
-  const formatMonth = (monthYear: string) => {
-    const [year, month] = monthYear.split('-');
-    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', {
-      month: 'long',
-      year: 'numeric'
-    });
-  };
+  // Memoized calculations
+  const spentPercentage = useMemo(() => 
+    summary.totalIncome > 0 ? Math.round((summary.totalExpenses / summary.totalIncome) * 100) : 0, 
+    [summary.totalIncome, summary.totalExpenses]
+  );
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
+  const avgIncome = useMemo(() => 
+    summary.incomeCount > 0 ? summary.totalIncome / summary.incomeCount : 0, 
+    [summary.totalIncome, summary.incomeCount]
+  );
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency: 'PKR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount).replace('PKR', 'Rs');
-  };
+  const avgExpense = useMemo(() => 
+    summary.expenseCount > 0 ? summary.totalExpenses / summary.expenseCount : 0, 
+    [summary.totalExpenses, summary.expenseCount]
+  );
 
-  // Loading Screen Component
+  // Components
   const LoadingScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-6">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-slate-500/10 rounded-full blur-3xl"></div>
-      </div>
-
-      {/* Loading Container */}
       <div className="relative z-10 bg-slate-800/40 backdrop-blur-xl rounded-3xl p-12 border border-slate-700/50 shadow-2xl max-w-2xl w-full">
-        {/* Logo/Brand */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative">
-            <div className="w-24 h-24 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center animate-pulse">
-              <Wallet className="w-12 h-12 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center animate-bounce">
-              <TrendingUp className="w-5 h-5 text-white" />
-            </div>
-            <div className="absolute -bottom-2 -left-2 w-10 h-10 bg-rose-500 rounded-full flex items-center justify-center animate-bounce delay-300">
-              <TrendingDown className="w-5 h-5 text-white" />
-            </div>
+          <div className="w-24 h-24 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center animate-pulse">
+            <Wallet className="w-12 h-12 text-white" />
           </div>
           <h1 className="text-4xl font-bold text-white mt-6">Transaction History</h1>
           <p className="text-blue-300 mt-2">Loading your financial transactions</p>
         </div>
 
-        {/* Progress Bar */}
         <div className="mb-8">
           <div className="flex justify-between text-sm text-slate-300 mb-2">
             <span>Loading transaction data...</span>
@@ -332,95 +259,115 @@ const TransactionList: React.FC = () => {
             <div 
               className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${loadingProgress}%` }}
-            ></div>
+            />
           </div>
         </div>
-
-        {/* Loading Steps */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 30 ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-slate-700/30'}`}>
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 30 ? 'bg-blue-500/20' : 'bg-slate-600/50'}`}>
-              <Calendar className={`w-5 h-5 ${loadingProgress >= 30 ? 'text-blue-400' : 'text-slate-400'}`} />
-            </div>
-            <p className={`text-sm font-medium ${loadingProgress >= 30 ? 'text-blue-300' : 'text-slate-400'}`}>
-              {loadingProgress >= 30 ? '✓' : '...'} Loading Months
-            </p>
-          </div>
-
-          <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 60 ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-slate-700/30'}`}>
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 60 ? 'bg-indigo-500/20' : 'bg-slate-600/50'}`}>
-              <TrendingUp className={`w-5 h-5 ${loadingProgress >= 60 ? 'text-indigo-400' : 'text-slate-400'}`} />
-            </div>
-            <p className={`text-sm font-medium ${loadingProgress >= 60 ? 'text-indigo-300' : 'text-slate-400'}`}>
-              {loadingProgress >= 60 ? '✓' : '...'} Loading Transactions
-            </p>
-          </div>
-
-          <div className={`text-center p-4 rounded-2xl transition-all duration-300 ${loadingProgress >= 90 ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-slate-700/30'}`}>
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 ${loadingProgress >= 90 ? 'bg-emerald-500/20' : 'bg-slate-600/50'}`}>
-              <Wallet className={`w-5 h-5 ${loadingProgress >= 90 ? 'text-emerald-400' : 'text-slate-400'}`} />
-            </div>
-            <p className={`text-sm font-medium ${loadingProgress >= 90 ? 'text-emerald-300' : 'text-slate-400'}`}>
-              {loadingProgress >= 90 ? '✓' : '...'} Calculating Summary
-            </p>
-          </div>
-        </div>
-
-        {/* Loading Messages */}
-        <div className="text-center">
-          <div className="inline-block bg-slate-700/50 rounded-full px-4 py-2 mb-4">
-            <div className="flex items-center gap-2">
-              <Loader className="w-4 h-4 text-blue-400 animate-spin" />
-              <p className="text-slate-300 text-sm">
-                {loadingProgress < 30 && "Preparing your transaction history..."}
-                {loadingProgress >= 30 && loadingProgress < 60 && "Loading transaction data..."}
-                {loadingProgress >= 60 && loadingProgress < 90 && "Calculating financial summary..."}
-                {loadingProgress >= 90 && "Finalizing your transaction overview..."}
-              </p>
-            </div>
-          </div>
-          
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
-            {loadingProgress < 50 
-              ? "We're gathering your transaction history from all sources."
-              : "Analyzing your income and expenses to provide detailed insights."
-            }
-          </p>
-        </div>
-
-        {/* Decorative Elements */}
-        <div className="absolute -bottom-6 -right-6 w-32 h-32 bg-gradient-to-r from-blue-500/20 to-indigo-600/20 rounded-full blur-2xl"></div>
-        <div className="absolute -top-6 -left-6 w-32 h-32 bg-gradient-to-r from-slate-500/20 to-gray-600/20 rounded-full blur-2xl"></div>
-      </div>
-
-      {/* Footer Note */}
-      <div className="mt-8 text-center">
-        <p className="text-slate-500 text-sm">
-          Please wait while we prepare your transaction history
-        </p>
-        <p className="text-slate-600 text-xs mt-1">
-          This usually takes just a few moments...
-        </p>
       </div>
     </div>
   );
 
-  // Refreshing Overlay Component
   const RefreshingOverlay = () => (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
       <div className="bg-slate-800/90 rounded-2xl p-8 border border-blue-500/30">
         <div className="flex flex-col items-center">
           <Loader className="w-12 h-12 text-blue-400 animate-spin mb-4" />
           <p className="text-white text-lg font-semibold">Updating data...</p>
-          <p className="text-slate-400 text-sm mt-2">Please wait a moment</p>
         </div>
       </div>
     </div>
   );
 
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
+  const SummaryCard = ({ 
+    title, 
+    value, 
+    subValue, 
+    icon: Icon, 
+    color = 'blue',
+    isBalance = false 
+  }: {
+    title: string;
+    value: string;
+    subValue: string;
+    icon: React.ElementType;
+    color?: 'blue' | 'emerald' | 'rose';
+    isBalance?: boolean;
+  }) => {
+    const colorClasses = {
+      blue: { text: 'text-blue-400', bg: 'bg-slate-700' },
+      emerald: { text: 'text-emerald-400', bg: 'bg-slate-700' },
+      rose: { text: 'text-rose-400', bg: 'bg-slate-700' }
+    };
+
+    return (
+      <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-slate-400 text-sm font-medium">{title}</p>
+            <p className={`text-2xl font-bold mt-2 ${colorClasses[color].text}`}>
+              {value}
+            </p>
+            <p className="text-slate-500 text-xs mt-1">{subValue}</p>
+          </div>
+          <div className={`p-3 ${colorClasses[color].bg} rounded-xl`}>
+            <Icon className={`w-6 h-6 ${colorClasses[color].text}`} />
+          </div>
+        </div>
+        {isBalance && (
+          <div className="mt-4 pt-4 border-t border-slate-700">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">Net Flow</span>
+              <span className={summary.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                {summary.balance >= 0 ? '+' : ''}{formatCurrency(summary.balance)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const TransactionRow = ({ transaction, index }: { transaction: Transaction; index: number }) => {
+    const isIncome = transaction.type === 'income';
+    
+    return (
+      <tr className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors duration-150">
+        <td className="py-4 px-6 text-slate-300">{index + 1}</td>
+        <td className="py-4 px-6 text-slate-300">{formatDate(transaction.date)}</td>
+        <td className="py-4 px-6">
+          <div className="text-slate-300 font-medium">{transaction.name}</div>
+          {transaction.description && (
+            <div className="text-slate-500 text-sm mt-1">{transaction.description}</div>
+          )}
+        </td>
+        <td className="py-4 px-6">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+            isIncome 
+              ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-800'
+              : 'bg-rose-900/50 text-rose-400 border border-rose-800'
+          }`}>
+            {transaction.type}
+          </span>
+        </td>
+        <td className="py-4 px-6 text-right">
+          <span className={`font-bold ${isIncome ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {isIncome ? '+' : '-'}{formatCurrency(transaction.amount)}
+          </span>
+        </td>
+        <td className="py-4 px-6">
+          <div className="flex justify-center gap-2">
+            <button onClick={() => handleEdit(transaction)} className="p-2 text-blue-400 hover:bg-slate-700 rounded-xl cursor-pointer">
+              <Edit className="w-4 h-4" />
+            </button>
+            <button onClick={() => handleDeleteClick(transaction)} className="p-2 text-rose-400 hover:bg-slate-700 rounded-xl cursor-pointer">
+              <Delete className="w-4 h-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <>
@@ -429,87 +376,30 @@ const TransactionList: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Balance Card */}
-          <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm font-medium">Current Balance</p>
-                <p className={`text-2xl font-bold mt-2 ${
-                  summary.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                }`}>
-                  {formatCurrency(summary.balance)}
-                </p>
-                <p className="text-slate-500 text-xs mt-1">
-                  {summary.incomeCount} income • {summary.expenseCount} expense
-                </p>
-              </div>
-              <div className="p-3 bg-slate-700 rounded-xl">
-                <Wallet className={`w-6 h-6 ${
-                  summary.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                }`} />
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Net Flow</span>
-                <span className={summary.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                  {summary.balance >= 0 ? '+' : ''}{formatCurrency(summary.balance)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Income Card */}
-          <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm font-medium">Total Income</p>
-                <p className="text-2xl font-bold text-emerald-400 mt-2">
-                  {formatCurrency(summary.totalIncome)}
-                </p>
-                <p className="text-slate-500 text-xs mt-1">
-                  {summary.incomeCount} transactions
-                </p>
-              </div>
-              <div className="p-3 bg-slate-700 rounded-xl">
-                <TrendingUp className="w-6 h-6 text-emerald-400" />
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Avg. Income</span>
-                <span className="text-emerald-400">
-                  {summary.incomeCount > 0 ? formatCurrency(summary.totalIncome / summary.incomeCount) : 'Rs 0'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Expenses Card */}
-          <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm font-medium">Total Expenses</p>
-                <p className="text-2xl font-bold text-rose-400 mt-2">
-                  {formatCurrency(summary.totalExpenses)}
-                </p>
-                <p className="text-slate-500 text-xs mt-1">
-                  {summary.expenseCount} transactions
-                </p>
-              </div>
-              <div className="p-3 bg-slate-700 rounded-xl">
-                <TrendingDown className="w-6 h-6 text-rose-400" />
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Avg. Expense</span>
-                <span className="text-rose-400">
-                  {summary.expenseCount > 0 ? formatCurrency(summary.totalExpenses / summary.expenseCount) : 'Rs 0'}
-                </span>
-              </div>
-            </div>
-          </div>
+          <SummaryCard
+            title="Current Balance"
+            value={formatCurrency(summary.balance)}
+            subValue={`${summary.incomeCount} income • ${summary.expenseCount} expense`}
+            icon={Wallet}
+            color={summary.balance >= 0 ? 'emerald' : 'rose'}
+            isBalance={true}
+          />
+          
+          <SummaryCard
+            title="Total Income"
+            value={formatCurrency(summary.totalIncome)}
+            subValue={`${summary.incomeCount} transactions`}
+            icon={TrendingUp}
+            color="emerald"
+          />
+          
+          <SummaryCard
+            title="Total Expenses"
+            value={formatCurrency(summary.totalExpenses)}
+            subValue={`${summary.expenseCount} transactions`}
+            icon={TrendingDown}
+            color="rose"
+          />
         </div>
 
         {/* Progress Bar */}
@@ -517,15 +407,13 @@ const TransactionList: React.FC = () => {
           <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-xl mb-6">
             <div className="flex justify-between text-sm text-slate-400 mb-2">
               <span>Income vs Expenses</span>
-              <span>{Math.round((summary.totalExpenses / summary.totalIncome) * 100)}% spent</span>
+              <span>{spentPercentage}% spent</span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-2">
               <div 
                 className="bg-gradient-to-r from-rose-500 to-pink-500 h-2 rounded-full transition-all duration-500"
-                style={{ 
-                  width: `${summary.totalIncome > 0 ? Math.min((summary.totalExpenses / summary.totalIncome) * 100, 100) : 0}%` 
-                }}
-              ></div>
+                style={{ width: `${Math.min(spentPercentage, 100)}%` }}
+              />
             </div>
             <div className="flex justify-between text-xs text-slate-500 mt-2">
               <span>Rs 0</span>
@@ -544,7 +432,7 @@ const TransactionList: React.FC = () => {
               </p>
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-3 ">
+            <div className="flex flex-col sm:flex-row gap-3">
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
@@ -596,56 +484,7 @@ const TransactionList: React.FC = () => {
               </thead>
               <tbody>
                 {transactions.map((transaction, index) => (
-                  <tr 
-                    key={transaction._id}
-                    className={`border-b border-slate-700/50 hover:bg-slate-750 transition-colors duration-150 ${
-                      index === transactions.length - 1 ? 'border-b-0' : ''
-                    }`}
-                  >
-                    <td className="py-4 px-6 text-slate-300">{index+1}</td>
-                    <td className="py-4 px-6 text-slate-300">{formatDate(transaction.date)}</td>
-                    <td className="py-4 px-6">
-                      <div className="text-slate-300 font-medium">{transaction.name}</div>
-                      {transaction.description && (
-                        <div className="text-slate-500 text-sm mt-1">{transaction.description}</div>
-                      )}
-                    </td>
-                    
-                    <td className="py-4 px-6">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        transaction.type === 'income' 
-                          ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-800'
-                          : 'bg-rose-900/50 text-rose-400 border border-rose-800'
-                      }`}>
-                        {transaction.type}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className={`font-bold ${
-                        transaction.type === 'income' ? 'text-emerald-400' : 'text-rose-400'
-                      }`}>
-                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() => handleEdit(transaction)}
-                          className="p-2 text-blue-400 hover:bg-slate-700 rounded-xl transition-colors duration-200 cursor-pointer"
-                          title="Edit transaction"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(transaction)}
-                          className="p-2 text-rose-400 hover:bg-slate-700 rounded-xl transition-colors duration-200 cursor-pointer"
-                          title="Delete transaction"
-                        >
-                          <Delete className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <TransactionRow key={transaction._id} transaction={transaction} index={index} />
                 ))}
                 
                 {transactions.length === 0 && (
@@ -717,7 +556,7 @@ const TransactionList: React.FC = () => {
                     className="flex-1 py-3 px-4 border border-slate-600 text-slate-300 rounded-xl hover:bg-slate-700 transition-colors duration-200 disabled:opacity-50"
                   >
                     Cancel
-                </button>
+                  </button>
                   <button
                     onClick={handleDeleteConfirm}
                     disabled={loading}
