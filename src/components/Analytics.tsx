@@ -38,9 +38,9 @@ const Analytics: React.FC = () => {
   const loadAvailableMonths = async () => {
     try {
       const months = await transactionAPI.getAvailableMonths();
-      setAvailableMonths(months.data);
-      if (months.data.length > 0) {
-        setSelectedMonth(months.data[0]);
+      setAvailableMonths(months);
+      if (months.length > 0) {
+        setSelectedMonth(months[0]);
       }
     } catch (error) {
       console.error('Error loading months:', error);
@@ -50,7 +50,7 @@ const Analytics: React.FC = () => {
   const loadTransactions = useCallback(async () => {
     try {
       const response = await transactionAPI.getTransactions(selectedMonth);
-      setTransactions(response.data);
+      setTransactions(response);
     } catch (error) {
       console.error('Error loading transactions:', error);
     }
@@ -59,7 +59,7 @@ const Analytics: React.FC = () => {
   const loadMonthlySummary = useCallback(async () => {
     try {
       const response = await transactionAPI.getMonthlySummary(selectedMonth);
-      setSummary(response.data);
+      setSummary(response);
     } catch (error) {
       console.error('Error loading summary:', error);
     }
@@ -105,7 +105,7 @@ const getYearlyIncomeData = useCallback(async () => {
       try {
         // Fetch transactions for this specific month
         const response = await transactionAPI.getTransactions(monthKey);
-        const monthTransactions = response.data.filter((t: Transaction) => t.type === 'income');
+        const monthTransactions = response.filter((t: Transaction) => t.type === 'income');
         
         const monthlyIncome = monthTransactions.reduce((sum: number, t: Transaction) => sum + t.amount, 0);
         

@@ -62,8 +62,8 @@ const ChangePassword: React.FC = () => {
       setSuccess('Password changed successfully!');
       
       // Update token if returned
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+      if (response && typeof response === 'string') {
+        localStorage.setItem('token', response);
       }
 
       // Reset form
@@ -79,7 +79,7 @@ const ChangePassword: React.FC = () => {
       }, 2000);
 
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || 'Failed to change password';
+      const errorMessage = err.response?.message || 'Failed to change password';
       setError(errorMessage);
     } finally {
       setLoading(false);
