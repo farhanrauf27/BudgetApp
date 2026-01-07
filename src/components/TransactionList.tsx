@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Delete, Edit, TrendingUp, TrendingDown, Wallet, Loader, Calendar } from 'lucide-react';
+import { Delete, Edit, TrendingUp, TrendingDown, Wallet, Loader } from 'lucide-react';
 import { transactionAPI } from '../services/api';
 import { Transaction } from '../types';
 import TransactionForm from './Transactions';
@@ -228,15 +228,7 @@ const TransactionList: React.FC = () => {
     [summary.totalIncome, summary.totalExpenses]
   );
 
-  const avgIncome = useMemo(() => 
-    summary.incomeCount > 0 ? summary.totalIncome / summary.incomeCount : 0, 
-    [summary.totalIncome, summary.incomeCount]
-  );
-
-  const avgExpense = useMemo(() => 
-    summary.expenseCount > 0 ? summary.totalExpenses / summary.expenseCount : 0, 
-    [summary.totalExpenses, summary.expenseCount]
-  );
+  
 
   // Components
   const LoadingScreen = () => (

@@ -83,7 +83,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         console.warn('No user ID in response, generated:', userId);
       }
-      
+    localStorage.removeItem('tab_closed');
+    localStorage.removeItem('last_activity');
       sessionManager.setUserSession(userId);
       
       // Initialize cache for this user
@@ -99,6 +100,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if (userId) {
         localStorage.setItem('userId', userId);
       }
+      localStorage.setItem('token', token);
+    localStorage.setItem('userId', userId);
+    if (userName) {
+      localStorage.setItem('userName', userName);
+    }
       
       // Store login timestamp for session management
       localStorage.setItem('loginTime', Date.now().toString());
