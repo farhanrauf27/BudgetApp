@@ -3,8 +3,8 @@ import { Transaction, MonthlySummary } from '../types';
 import ApiCache from './api-cache';
 import batcher from './api-batcher';
 
-// const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
+// const API_URL = 'http://localhost:5000/api';
 
 // Create axios instance with optimized defaults
 const api = axios.create({
