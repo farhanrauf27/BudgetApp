@@ -192,10 +192,6 @@ const Dashboard: React.FC = () => {
     }
   }, [selectedMonth, loadTransactions, loadMonthlySummary, calculateOpeningBalance]);
 
-  // Handle "Add First Transaction" button
-  const handleAddFirstTransaction = () => {
-    setShowForm(true);
-  };
 
   // Memoized calculations
   const { sortedTransactions, incomeTransactions, expenseTransactions, totalIncome, totalExpenses, currentBalance } = useMemo(() => {
@@ -499,7 +495,7 @@ const Dashboard: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
         {/* Header */}
         <div className="mb-8">
-          <div className="hidden lg:flex justify-between items-center">
+          <div className=" lg:flex justify-between items-center">
             <div>
               <h1 className="text-4xl font-bold text-white mb-2">Financial Dashboard</h1>
               <p className="text-blue-200 text-lg">Track your income and expenses</p>
