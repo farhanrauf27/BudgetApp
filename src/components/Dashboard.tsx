@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { transactionAPI } from '../services/api';
-import { Transaction, MonthlySummary } from '../types';
+import { Transaction } from '../types';
 import TransactionForm from './Transactions';
-import { Calendar, Loader, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { Calendar, Loader, Wallet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import cache from '../services/cache';
 import sessionManager from '../services/sessionManager';
@@ -194,7 +194,7 @@ const Dashboard: React.FC = () => {
 
 
   // Memoized calculations
-  const { sortedTransactions, incomeTransactions, expenseTransactions, totalIncome, totalExpenses, currentBalance } = useMemo(() => {
+  const { incomeTransactions, expenseTransactions, totalIncome, totalExpenses, currentBalance } = useMemo(() => {
     const sorted = [...transactions].sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );

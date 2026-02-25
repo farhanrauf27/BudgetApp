@@ -9,7 +9,7 @@ const API_URL = 'https://budgetbackend-shoa.onrender.com/api';
 // Create axios instance with optimized defaults
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // 10 seconds timeout
+  timeout: 500000, // 10 seconds timeout
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -91,7 +91,7 @@ const cachedRequest = async <T>(
         url,
         params: method.toLowerCase() === 'get' ? params : undefined,
         data: method.toLowerCase() === 'post' || method.toLowerCase() === 'put' ? params : undefined,
-        timeout: options?.timeout || 10000
+        timeout: options?.timeout || 500000
       };
       
       const response = await api(config);
